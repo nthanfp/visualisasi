@@ -8,7 +8,7 @@
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css"
       rel="stylesheet"
     />
-    <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plotly.js@2.26.0/dist/plotly.min.js"></script>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-light bg-light">
@@ -31,38 +31,35 @@
               <a class="nav-link" href="index.html">Bar Chart</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link active" href="line.html">Line Chart</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" aria-current="page" href="bubble.html"
-                >Bubble Chart</a
+              <a class="nav-link active" aria-current="page" href="line.html"
+                >Line Chart</a
               >
             </li>
             <li class="nav-item">
-              <a class="nav-link" aria-current="page" href="maps.html"
-                >Map Chart</a
-              >
+              <a class="nav-link" href="bubble.html">Bubble Chart</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="maps.html">Map Chart</a>
             </li>
           </ul>
         </div>
       </div>
     </nav>
-
     <div class="container mt-5">
       <div class="alert alert-info">
         <strong>Tips:</strong> Line chart ini menunjukkan perkembangan produksi
-        dari tahun 2022-2024. Anda bisa memfilter berdasarkan provinsi atau
-        jenis tanaman tertentu.
+        tahunan (2022-2024). Filter berdasarkan provinsi atau jenis tanaman.
+        Jika 'Semua Provinsi' dipilih, garis mewakili tiap provinsi. Jika
+        provinsi tertentu dipilih, garis mewakili tiap jenis tanaman di provinsi
+        itu.
       </div>
-
       <div class="row mb-4">
         <div class="col-md-6">
           <label for="provinsi" class="form-label">Pilih Provinsi:</label>
           <select id="provinsi" class="form-select" onchange="updateChart()">
-            <option value="all">Semua Provinsi</option>
+            <option value="all" selected>Semua Provinsi</option>
           </select>
         </div>
-
         <div class="col-md-6">
           <label for="jenis_tanaman" class="form-label"
             >Pilih Jenis Tanaman:</label
@@ -72,49 +69,95 @@
             class="form-select"
             onchange="updateChart()"
           >
-            <option value="all">Semua Jenis Tanaman</option>
+            <option value="all" selected>Semua Jenis Tanaman</option>
           </select>
         </div>
       </div>
-
       <div id="lineChart" class="mt-4 mb-4" style="height: 600px"></div>
     </div>
-
     <script>
       /**
-       * Loads and parses CSV data into JSON format.
-       * @returns {Promise<Object[]>} Parsed data array
+       * Loads and parses CSV data from the specified file into an array of objects.
+       * Assumes the first row of the CSV contains headers.
+       * @async
+       * @returns {Promise<Object[]>} A promise that resolves to an array of data objects.
+       * Each object represents a row with headers as keys.
+       * Returns an empty array if fetching or parsing fails.
        */
       async function loadData() {
-        const response = await fetch("plotly_data_long.csv");
-        const data = await response.text();
-        const rows = data.split("\n").map((row) => row.split(","));
-        const headers = rows[0];
+        try {
+          const response = await fetch("plotly_data_long.csv");
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const data = await response.text();
+          // Split data into rows, handling potential trailing newline
+          const rows = data
+            .trim()
+            .split("\n")
+            .map((row) => row.split(","));
+          if (rows.length < 2) {
+            // Check if there's at least a header and one data row
+            console.warn("CSV data is empty or missing headers.");
+            return [];
+          }
+          // Trim headers
+          const headers = rows[0].map((header) => header.trim());
 
-        const dataArr = rows.slice(1).map((row) => {
-          const obj = {};
-          headers.forEach((header, idx) => {
-            obj[header] = row[idx];
-          });
-          return obj;
-        });
+          const dataArr = rows
+            .slice(1)
+            .map((row) => {
+              const obj = {};
+              // Ensure row has the same number of columns as headers
+              if (row.length === headers.length) {
+                headers.forEach((header, idx) => {
+                  // Trim cell data, handle potential undefined cells
+                  obj[header] = row[idx] ? row[idx].trim() : "";
+                });
+                return obj;
+              } else {
+                // Indicate row should be skipped if column count mismatches
+                console.warn(
+                  `Skipping row due to mismatched column count: ${row}`
+                );
+                return null;
+              }
+              // Remove null entries from skipped rows
+            })
+            .filter((obj) => obj !== null);
 
-        return dataArr;
+          return dataArr;
+        } catch (error) {
+          console.error("Failed to load or parse data:", error);
+          // Return empty array on error
+          return [];
+        }
       }
 
       /**
-       * Initializes filter dropdowns for province and plant type.
+       * Populates the province and plant type filter dropdowns based on the data.
+       * Fetches data using loadData(), extracts unique values, sorts them,
+       * and adds them as options to the respective select elements.
+       * @async
+       * @returns {Promise<void>} A promise that resolves when filters are loaded.
        */
       async function loadFilters() {
         const data = await loadData();
+        if (!data || data.length === 0) {
+          console.error("No data available to load filters.");
+          return;
+        }
 
+        // Populate Province Filter
+        const provinsiSelect = document.getElementById("provinsi");
+        // Use Set to get unique, non-empty province names
         const provinsiSet = new Set(
           data
             .map((item) => item["Provinsi"])
-            .filter((provinsi) => provinsi.trim() !== "")
+            // Ensure province is not null/undefined/empty string after trimming
+            .filter((provinsi) => provinsi && provinsi.trim() !== "")
         );
-
-        const provinsiSelect = document.getElementById("provinsi");
+        // Sort alphabetically and add options
         Array.from(provinsiSet)
           .sort()
           .forEach((provinsi) => {
@@ -124,10 +167,16 @@
             provinsiSelect.appendChild(option);
           });
 
-        const jenisTanamanSet = new Set(
-          data.map((item) => item["Jenis Tanaman"])
-        );
+        // Populate Plant Type Filter
         const jenisTanamanSelect = document.getElementById("jenis_tanaman");
+        // Use Set to get unique, non-empty plant types
+        const jenisTanamanSet = new Set(
+          data
+            .map((item) => item["Jenis Tanaman"])
+            // Ensure plant type is not null/undefined/empty string after trimming
+            .filter((jenis) => jenis && jenis.trim() !== "")
+        );
+        // Sort alphabetically and add options
         Array.from(jenisTanamanSet)
           .sort()
           .forEach((jenis) => {
@@ -139,47 +188,13 @@
       }
 
       /**
-       * Updates and renders the line chart based on selected filters.
+       * Generates an array of distinct color hex codes.
+       * Uses a predefined list first, then generates HSL colors if more are needed.
+       * @param {number} numColors - The number of distinct colors required.
+       * @returns {string[]} An array of color hex codes or HSL strings.
        */
-      async function updateChart() {
-        const data = await loadData();
-        const selectedProvinsi = document.getElementById("provinsi").value;
-        const selectedJenisTanaman =
-          document.getElementById("jenis_tanaman").value;
-
-        // Filter data berdasarkan pilihan
-        const filteredData = data.filter((item) => {
-          const isValidProvinsi = item["Provinsi"].trim() !== "";
-          const matchProvinsi =
-            selectedProvinsi === "all" || item["Provinsi"] === selectedProvinsi;
-          const matchTanaman =
-            selectedJenisTanaman === "all" ||
-            item["Jenis Tanaman"] === selectedJenisTanaman;
-          return isValidProvinsi && matchProvinsi && matchTanaman;
-        });
-
-        // Group data untuk line chart
-        const groupedData = {};
-
-        filteredData.forEach((item) => {
-          const key =
-            selectedProvinsi === "all"
-              ? item["Provinsi"]
-              : item["Jenis Tanaman"];
-
-          if (!groupedData[key]) {
-            groupedData[key] = {
-              2022: 0,
-              2023: 0,
-              2024: 0,
-            };
-          }
-          groupedData[key][item["Tahun"]] += parseFloat(item["Produksi"]);
-        });
-
-        // Siapkan traces untuk Plotly
-        const traces = [];
-        const colors = [
+      function generateColorScale(numColors) {
+        const baseColors = [
           "#1f77b4",
           "#ff7f0e",
           "#2ca02c",
@@ -190,71 +205,271 @@
           "#7f7f7f",
           "#bcbd22",
           "#17becf",
+          "#aec7e8",
+          "#ffbb78",
+          "#98df8a",
+          "#ff9896",
+          "#c5b0d5",
+          "#c49c94",
+          "#f7b6d2",
+          "#c7c7c7",
+          "#dbdb8d",
+          "#9edae5",
         ];
 
+        // If we have enough base colors, use them directly
+        if (numColors <= baseColors.length) {
+          return baseColors.slice(0, numColors);
+        }
+
+        // Otherwise, generate additional colors using HSL color space for better distinction
+        // Start with base colors
+        const colors = [...baseColors];
+        const additionalColorsNeeded = numColors - baseColors.length;
+        for (let i = 0; i < additionalColorsNeeded; i++) {
+          // Generate hues spread across the remaining spectrum
+          const hue = Math.floor(((i + 0.5) * 360) / additionalColorsNeeded);
+          // Keep saturation and lightness constant for consistency
+          colors.push(`hsl(${hue}, 70%, 50%)`);
+        }
+        return colors;
+      }
+
+      /**
+       * Updates and renders the line chart in the 'lineChart' div.
+       * Fetches data, applies filters, groups data by year for each category
+       * (province or plant type based on filters), prepares Plotly traces (lines),
+       * defines the layout, and draws the chart.
+       * @async
+       * @returns {Promise<void>} A promise that resolves when the chart is updated.
+       */
+      async function updateChart() {
+        const data = await loadData();
+        if (!data || data.length === 0) {
+          console.error("No data available to update chart.");
+          // Clear the chart or display a message if no data loaded
+          Plotly.purge("lineChart");
+          document.getElementById("lineChart").innerHTML =
+            '<div class="alert alert-warning">No data loaded to display the chart.</div>';
+          return;
+        }
+
+        // Get current filter selections
+        const selectedProvinsi = document.getElementById("provinsi").value;
+        const selectedJenisTanaman =
+          document.getElementById("jenis_tanaman").value;
+
+        // Filter data based on dropdown selections
+        const filteredData = data.filter((item) => {
+          // Basic validation: Check if item and required properties exist and are valid
+          if (
+            !item ||
+            !item["Provinsi"] ||
+            !item["Tahun"] ||
+            !item["Jenis Tanaman"] ||
+            !item["Produksi"]
+          ) {
+            return false;
+          }
+          // Check province validity
+          const isValidProvinsi = item["Provinsi"].trim() !== "";
+          // Check if year is one of the expected ones
+          const isValidYear = ["2022", "2023", "2024"].includes(item["Tahun"]);
+          // Check if production is a number
+          const isValidProduksi = !isNaN(parseFloat(item["Produksi"]));
+
+          // Check province match ('all' or specific province)
+          const matchProvinsi =
+            selectedProvinsi === "all" || item["Provinsi"] === selectedProvinsi;
+          // Check plant type match ('all' or specific type)
+          const matchTanaman =
+            selectedJenisTanaman === "all" ||
+            item["Jenis Tanaman"] === selectedJenisTanaman;
+
+          // Return true only if data is valid and matches filters
+          return (
+            isValidProvinsi &&
+            isValidYear &&
+            isValidProduksi &&
+            matchProvinsi &&
+            matchTanaman
+          );
+        });
+
+        // Check if filtered data is empty after applying filters
+        if (filteredData.length === 0) {
+          console.warn("No data matches the current filter criteria.");
+          // Clear previous chart
+          Plotly.purge("lineChart");
+          document.getElementById("lineChart").innerHTML =
+            '<div class="alert alert-warning">No data found for the selected combination of filters.</div>';
+          // Exit function
+          return;
+        }
+
+        // --- Group data for Line Chart ---
+        // Aggregate production per year for each line category.
+        // The category (line) depends on the 'Provinsi' filter.
+        const groupedData = {};
+        // Define expected years
+        const years = ["2022", "2023", "2024"];
+
+        filteredData.forEach((item) => {
+          // Determine the key for grouping (which defines each line)
+          // If 'Semua Provinsi' is selected, each line represents a Province.
+          // If a specific Province is selected, each line represents a Jenis Tanaman within that province.
+          const key =
+            selectedProvinsi === "all"
+              ? item["Provinsi"]
+              : item["Jenis Tanaman"];
+
+          // Initialize the group if it doesn't exist
+          if (!groupedData[key]) {
+            groupedData[key] = {};
+            // Initialize all years to 0
+            years.forEach((year) => (groupedData[key][year] = 0));
+          }
+
+          // Add production to the correct year within the group
+          const productionValue = parseFloat(item["Produksi"]);
+          // Only add if the year exists in our defined years and production is valid
+          if (groupedData[key].hasOwnProperty(item["Tahun"])) {
+            groupedData[key][item["Tahun"]] += productionValue;
+          }
+        });
+
+        // Check if grouped data is empty (e.g., all production was invalid or zero)
+        if (Object.keys(groupedData).length === 0) {
+          console.warn("No valid production data found after grouping.");
+          // Clear previous chart
+          Plotly.purge("lineChart");
+          document.getElementById("lineChart").innerHTML =
+            '<div class="alert alert-warning">No valid production data to display for the selected filters.</div>';
+          // Exit function
+          return;
+        }
+
+        // --- Prepare Plotly Traces (Lines) ---
+        const traces = [];
+        // Get a color scale based on the number of lines needed
+        const numLines = Object.keys(groupedData).length;
+        const lineColors = generateColorScale(numLines);
         let colorIndex = 0;
-        for (const [name, values] of Object.entries(groupedData)) {
+
+        // Sort keys (Province or Plant Type names) alphabetically for consistent legend order
+        const sortedKeys = Object.keys(groupedData).sort();
+
+        // Create a trace for each key (each line on the chart)
+        for (const name of sortedKeys) {
+          const values = groupedData[name];
+          // Cycle through colors
+          const currentLineColor = lineColors[colorIndex % lineColors.length];
           traces.push({
-            x: ["2022", "2023", "2024"],
-            y: [values["2022"], values["2023"], values["2024"]],
+            // X-axis values are the years
+            x: years,
+            // Y-axis values are the aggregated production for each year
+            y: years.map((year) => values[year]),
+            // Legend name for the line (Province or Plant Type)
             name: name,
-            type: "line",
+            // Use scatter type for lines/markers
+            type: "scatter",
+            // Show both lines and markers
             mode: "lines+markers",
             marker: {
+              // Size of the markers
               size: 8,
-              color: colors[colorIndex % colors.length],
+              color: currentLineColor,
             },
             line: {
+              // Width of the line
               width: 3,
-              color: colors[colorIndex % colors.length],
+              color: currentLineColor,
             },
+            // Custom hover text for each point, format production with comma separator
+            hovertemplate: `<b>${name}</b><br>Tahun: %{x}<br>Produksi: %{y:,.0f} kw<extra></extra>`,
           });
           colorIndex++;
         }
 
-        // Atur layout
+        // --- Define Chart Layout ---
         const layout = {
-          title: `Tren Produksi ${
+          // Dynamic title based on filter selections
+          title: `Tren Produksi Tahunan ${
             selectedJenisTanaman === "all"
-              ? "Semua Jenis Tanaman"
-              : selectedJenisTanaman
-          } 
-                  di ${
-                    selectedProvinsi === "all"
-                      ? "Semua Provinsi"
-                      : selectedProvinsi
-                  }`,
+              ? "(Semua Tanaman)" // More descriptive for 'all'
+              : `(${selectedJenisTanaman})` // Parentheses for specific item
+          } di ${
+            selectedProvinsi === "all"
+              ? "Semua Provinsi" // Standard 'all' text
+              : selectedProvinsi // Specific province name
+          }`,
           xaxis: {
             title: "Tahun",
+            // Treat years as categories
             type: "category",
           },
           yaxis: {
-            title: "Produksi (kw)",
+            title: "Total Produksi (kw)",
+            // Add comma separators to y-axis ticks
+            tickformat: ",.0f",
+            // Automatically adjust range, starting from zero if possible
+            rangemode: "tozero",
+            // Add some padding above the max value
+            rangepadding: 0.1,
           },
-          hovermode: "closest",
+          // Show hover info for all lines at a specific x-value (year)
+          hovermode: "x unified",
+          // Display the legend
           showlegend: true,
           legend: {
+            // Horizontal legend
             orientation: "h",
-            y: -0.2,
+            yanchor: "bottom",
+            // Position legend below chart, adjust as needed (value might need tweaking based on screen size)
+            y: -1,
+            xanchor: "center",
+            x: 0.5,
           },
+          // Adjust margins to prevent label cutoff
           margin: {
-            l: 50,
+            // Increased left margin for y-axis title and ticks
+            l: 80,
             r: 50,
+            // Keep bottom margin for legend
             b: 100,
-            t: 50,
+            // Increased top margin for title
+            t: 80,
             pad: 4,
           },
+          // Ensure chart area is responsive
+          autosize: true,
         };
 
-        Plotly.newPlot("lineChart", traces, layout);
+        // --- Render the Chart ---
+        // Use Plotly.newPlot to draw/update the chart in the 'lineChart' div
+        Plotly.newPlot("lineChart", traces, layout, { responsive: true });
       }
 
-      // Inisialisasi dashboard saat pertama kali dimuat
+      // --- Initialization ---
+      /**
+       * Event listener that runs when the DOM is fully loaded.
+       * Initializes the application by loading filters and then updating the chart
+       * with default filter values.
+       */
       document.addEventListener("DOMContentLoaded", () => {
-        loadFilters().then(() => updateChart());
+        // Load filters first, then update the chart with initial settings
+        loadFilters()
+          .then(() => {
+            updateChart();
+          })
+          .catch((error) => {
+            console.error("Initialization failed:", error);
+            // Display an error message to the user if initialization fails
+            document.getElementById("lineChart").innerHTML =
+              '<div class="alert alert-danger">Failed to initialize the chart. Please check the data source or console for errors.</div>';
+          });
       });
     </script>
-
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.min.js"></script>
   </body>
