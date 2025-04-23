@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard Produksi Tanaman</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+      <div class="container-fluid container">
+        <a class="navbar-brand" href="#">Produksi Tanaman</a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarNav"
+          aria-controls="navbarNav"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item">
+              <a class="nav-link active" href="index.html">Bar Chart</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="line.html">Line Chart</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" aria-current="page" href="bubble.html"
+                >Bubble Chart</a
+              >
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" aria-current="page" href="maps.html"
+                >Map Chart</a
+              >
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container mt-5">
+      <div class="alert alert-info">
+        <strong>Tips Penggunaan:</strong>
+        <ul class="mb-0">
+          <li>
+            Gunakan dropdown filter untuk melihat data spesifik berdasarkan
+            Provinsi, Jenis Tanaman, atau Tahun
+          </li>
+          <li>Pilih "Semua" pada filter untuk melihat data agregat</li>
+          <li>
+            Klik pada legend grafik untuk menampilkan/menyembunyikan tahun
+            tertentu
+          </li>
+          <li>Arahkan kursor ke bar chart untuk melihat detail produksi</li>
+          <li>
+            Gunakan tombol zoom di pojok kanan atas grafik untuk memperbesar
+            area tertentu
+          </li>
+          <li>Klik "Line Chart" di menu untuk melihat tren produksi tahunan</li>
+        </ul>
+      </div>
+
+      <div class="row mb-4">
+        <div class="col-md-4">
+          <label for="provinsi" class="form-label">Pilih Provinsi:</label>
+          <select id="provinsi" class="form-select" onchange="updateChart()">
+            <option value="all">Semua Provinsi</option>
+          </select>
+        </div>
+
+        <div class="col-md-4">
+          <label for="jenis_tanaman" class="form-label"
+            >Pilih Jenis Tanaman:</label
+          >
+          <select
+            id="jenis_tanaman"
+            class="form-select"
+            onchange="updateChart()"
+          >
+            <option value="all">Semua Jenis Tanaman</option>
+          </select>
+        </div>
+
+        <div class="col-md-4">
+          <label for="tahun" class="form-label">Pilih Tahun:</label>
+          <select id="tahun" class="form-select" onchange="updateChart()">
+            <option value="all">Semua Tahun</option>
+            <option value="2022">2022</option>
+            <option value="2023">2023</option>
+            <option value="2024">2024</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="chart" class="mt-4 mb-4"></div>
+    </div>
+
+    <script>
+      /**
+       * Loads and parses CSV data into JSON format.
+       * @returns {Promise<Object[]>} Parsed data array
+       */
+      async function loadData() {
+        const response = await fetch("plotly_data_long.csv");
+        const data = await response.text();
+        const rows = data.split("\n").map((row) => row.split(","));
+        const headers = rows[0];
+
+        const dataArr = rows.slice(1).map((row) => {
+          const obj = {};
+          headers.forEach((header, idx) => {
+            obj[header] = row[idx];
+          });
+          return obj;
+        });
+
+        return dataArr;
+      }
+
+      /**
+       * Initializes filter dropdowns for province and plant type.
+       * Populates dropdowns using the dataset.
+       */
+      async function loadFilters() {
+        const data = await loadData();
+
+        const provinsiSet = new Set(data.map((item) => item["Provinsi"]));
+        const provinsiSelect = document.getElementById("provinsi");
+        provinsiSet.forEach((provinsi) => {
+          const option = document.createElement("option");
+          option.value = provinsi;
+          option.textContent = provinsi;
+          provinsiSelect.appendChild(option);
+        });
+
+        const jenisTanamanSet = new Set(
+          data.map((item) => item["Jenis Tanaman"])
+        );
+        const jenisTanamanSelect = document.getElementById("jenis_tanaman");
+        jenisTanamanSet.forEach((jenis) => {
+          const option = document.createElement("option");
+          option.value = jenis;
+          option.textContent = jenis;
+          jenisTanamanSelect.appendChild(option);
+        });
+      }
+
+      /**
+       * Creates an object with empty structure for grouping data per year.
+       * @param {string[]} tahunFilter Array of years
+       * @returns {Object} Initialized data structure for each year
+       */
+      function initGroupedData(tahunFilter) {
+        const grouped = {};
+        tahunFilter.forEach((tahun) => (grouped[tahun] = {}));
+        return grouped;
+      }
+
+      /**
+       * Updates and renders the chart based on selected filters.
+       */
+      async function updateChart() {
+        const data = await loadData();
+        const selectedProvinsi = document.getElementById("provinsi").value;
+        const selectedJenisTanaman =
+          document.getElementById("jenis_tanaman").value;
+        const selectedTahun = document.getElementById("tahun").value;
+
+        const tahunFilter =
+          selectedTahun === "all" ? ["2022", "2023", "2024"] : [selectedTahun];
+
+        const filteredData = data.filter((item) => {
+          const matchProvinsi =
+            selectedProvinsi === "all" || item["Provinsi"] === selectedProvinsi;
+          const matchTanaman =
+            selectedJenisTanaman === "all" ||
+            item["Jenis Tanaman"] === selectedJenisTanaman;
+          const matchTahun = tahunFilter.includes(item["Tahun"]);
+          return matchProvinsi && matchTanaman && matchTahun;
+        });
+
+        const groupedData = initGroupedData(tahunFilter);
+
+        filteredData.forEach((item) => {
+          const tahun = item["Tahun"];
+          const key = `${item["Jenis Tanaman"]} - ${item["Provinsi"]}`;
+          if (!groupedData[tahun][key]) {
+            groupedData[tahun][key] = 0;
+          }
+          groupedData[tahun][key] += parseFloat(item["Produksi"]);
+        });
+
+        const colorMap = {
+          2022: "#3498db",
+          2023: "#2ecc71",
+          2024: "#e74c3c",
+        };
+
+        const traces = tahunFilter.map((tahun) => {
+          return {
+            x: Object.keys(groupedData[tahun]).map((key) =>
+              key.split(" - ")[0].trim()
+            ),
+            y: Object.values(groupedData[tahun]),
+            type: "bar",
+            name: tahun,
+            marker: { color: colorMap[tahun] || "gray" },
+            hoverinfo: "x+y",
+          };
+        });
+
+        const layout = {
+          title: `Produksi Tanaman - ${
+            selectedProvinsi === "all" ? "Semua Provinsi" : selectedProvinsi
+          }`,
+          xaxis: {
+            title:
+              selectedJenisTanaman === "all"
+                ? "Jenis Tanaman - Provinsi"
+                : "Provinsi",
+            tickangle: 45,
+          },
+          yaxis: {
+            title: "Produksi (kw)",
+          },
+          barmode: "group",
+        };
+
+        Plotly.newPlot("chart", traces, layout);
+      }
+
+      loadFilters().then(() => updateChart());
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.min.js"></script>
+  </body>
+</html>

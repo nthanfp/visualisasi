@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bubble Chart Produksi Tanaman</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.plot.ly/plotly-3.0.1.min.js"></script>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+      <div class="container-fluid container">
+        <a class="navbar-brand" href="#">Produksi Tanaman</a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarNav"
+          aria-controls="navbarNav"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item">
+              <a class="nav-link" href="index.html">Bar Chart</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="line.html">Line Chart</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link active" aria-current="page" href="bubble.html"
+                >Bubble Chart</a
+              >
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" aria-current="page" href="maps.html"
+                >Map Chart</a
+              >
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container mt-5">
+      <div class="alert alert-info">
+        <strong>Tips:</strong> Bubble chart ini menunjukkan hubungan antara
+        jenis tanaman dan provinsi. Ukuran bubble menunjukkan jumlah produksi,
+        dan warna menunjukkan tahun.
+      </div>
+
+      <div class="row mb-4">
+        <div class="col-md-4">
+          <label for="tahun" class="form-label">Pilih Tahun:</label>
+          <select id="tahun" class="form-select" onchange="updateChart()">
+            <option value="all">Semua Tahun</option>
+            <option value="2022">2022</option>
+            <option value="2023">2023</option>
+            <option value="2024" selected>2024</option>
+          </select>
+        </div>
+
+        <div class="col-md-4">
+          <label for="provinsi" class="form-label">Pilih Provinsi:</label>
+          <select id="provinsi" class="form-select" onchange="updateChart()">
+            <option value="all">Semua Provinsi</option>
+          </select>
+        </div>
+
+        <div class="col-md-4">
+          <label for="jenis_tanaman" class="form-label"
+            >Pilih Jenis Tanaman:</label
+          >
+          <select
+            id="jenis_tanaman"
+            class="form-select"
+            onchange="updateChart()"
+          >
+            <option value="all">Semua Jenis Tanaman</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="bubbleChart" class="mt-4 mb-4" style="height: 600px"></div>
+    </div>
+
+    <script>
+      /**
+       * Loads and parses CSV data into JSON format.
+       * @returns {Promise<Object[]>} Parsed data array
+       */
+      async function loadData() {
+        const response = await fetch("plotly_data_long.csv");
+        const data = await response.text();
+        const rows = data.split("\n").map((row) => row.split(","));
+        const headers = rows[0];
+
+        const dataArr = rows.slice(1).map((row) => {
+          const obj = {};
+          headers.forEach((header, idx) => {
+            obj[header] = row[idx];
+          });
+          return obj;
+        });
+
+        return dataArr;
+      }
+
+      /**
+       * Initializes filter dropdowns for province and plant type.
+       */
+      async function loadFilters() {
+        const data = await loadData();
+
+        const provinsiSet = new Set(
+          data
+            .map((item) => item["Provinsi"])
+            .filter((provinsi) => provinsi.trim() !== "")
+        );
+
+        const provinsiSelect = document.getElementById("provinsi");
+        Array.from(provinsiSet)
+          .sort()
+          .forEach((provinsi) => {
+            const option = document.createElement("option");
+            option.value = provinsi;
+            option.textContent = provinsi;
+            provinsiSelect.appendChild(option);
+          });
+
+        const jenisTanamanSet = new Set(
+          data.map((item) => item["Jenis Tanaman"])
+        );
+        const jenisTanamanSelect = document.getElementById("jenis_tanaman");
+        Array.from(jenisTanamanSet)
+          .sort()
+          .forEach((jenis) => {
+            const option = document.createElement("option");
+            option.value = jenis;
+            option.textContent = jenis;
+            jenisTanamanSelect.appendChild(option);
+          });
+      }
+
+      /**
+       * Updates and renders the bubble chart based on selected filters.
+       */
+      async function updateChart() {
+        const data = await loadData();
+        const selectedTahun = document.getElementById("tahun").value;
+        const selectedProvinsi = document.getElementById("provinsi").value;
+        const selectedJenisTanaman =
+          document.getElementById("jenis_tanaman").value;
+
+        // Filter data berdasarkan pilihan
+        const filteredData = data.filter((item) => {
+          const isValidProvinsi = item["Provinsi"].trim() !== "";
+          const matchTahun =
+            selectedTahun === "all" || item["Tahun"] === selectedTahun;
+          const matchProvinsi =
+            selectedProvinsi === "all" || item["Provinsi"] === selectedProvinsi;
+          const matchTanaman =
+            selectedJenisTanaman === "all" ||
+            item["Jenis Tanaman"] === selectedJenisTanaman;
+          return isValidProvinsi && matchTahun && matchProvinsi && matchTanaman;
+        });
+
+        // Group data untuk bubble chart
+        let groupedData = [];
+
+        if (selectedTahun !== "all") {
+          // If specific year is selected, show provinsi vs tanaman
+          const tempData = {};
+
+          filteredData.forEach((item) => {
+            const key = `${item["Provinsi"]}_${item["Jenis Tanaman"]}`;
+
+            if (!tempData[key]) {
+              tempData[key] = {
+                provinsi: item["Provinsi"],
+                jenisTanaman: item["Jenis Tanaman"],
+                tahun: item["Tahun"],
+                produksi: 0,
+              };
+            }
+
+            tempData[key].produksi += parseFloat(item["Produksi"]);
+          });
+
+          groupedData = Object.values(tempData);
+        } else {
+          // If all years selected, show year dimension
+          const tempData = {};
+
+          filteredData.forEach((item) => {
+            const key = `${item["Provinsi"]}_${item["Jenis Tanaman"]}_${item["Tahun"]}`;
+
+            if (!tempData[key]) {
+              tempData[key] = {
+                provinsi: item["Provinsi"],
+                jenisTanaman: item["Jenis Tanaman"],
+                tahun: item["Tahun"],
+                produksi: 0,
+              };
+            }
+
+            tempData[key].produksi += parseFloat(item["Produksi"]);
+          });
+
+          groupedData = Object.values(tempData);
+        }
+
+        // Siapkan data untuk bubble chart
+        let traces = [];
+
+        if (selectedTahun === "all") {
+          // Create traces by year
+          const years = ["2022", "2023", "2024"];
+          const yearColors = {
+            2022: "#1f77b4",
+            2023: "#ff7f0e",
+            2024: "#2ca02c",
+          };
+
+          years.forEach((year) => {
+            const yearData = groupedData.filter((item) => item.tahun === year);
+
+            if (yearData.length > 0) {
+              traces.push({
+                x: yearData.map((item) => item.jenisTanaman),
+                y: yearData.map((item) => item.provinsi),
+                mode: "markers",
+                marker: {
+                  size: yearData.map((item) => Math.sqrt(item.produksi) / 2),
+                  sizemode: "area",
+                  sizeref:
+                    (2.0 *
+                      Math.max(
+                        ...yearData.map((item) => Math.sqrt(item.produksi) / 2)
+                      )) /
+                    50 ** 2,
+                  color: yearColors[year],
+                  opacity: 0.7,
+                  line: {
+                    color: "white",
+                    width: 1,
+                  },
+                },
+                text: yearData.map(
+                  (item) =>
+                    `Provinsi: ${item.provinsi}<br>Tanaman: ${
+                      item.jenisTanaman
+                    }<br>Tahun: ${
+                      item.tahun
+                    }<br>Produksi: ${item.produksi.toLocaleString()} kw`
+                ),
+                hoverinfo: "text",
+                name: `Tahun ${year}`,
+              });
+            }
+          });
+        } else {
+          // Create a single trace for the selected year
+          if (groupedData.length > 0) {
+            // Create categories if multiple provinces or plants remain
+            const shouldGroupByProvinsi =
+              selectedProvinsi === "all" && selectedJenisTanaman !== "all";
+            const shouldGroupByTanaman =
+              selectedProvinsi !== "all" && selectedJenisTanaman === "all";
+
+            if (shouldGroupByProvinsi) {
+              // Group by province if multiple provinces
+              const provinsiGroups = {};
+
+              groupedData.forEach((item) => {
+                if (!provinsiGroups[item.provinsi]) {
+                  provinsiGroups[item.provinsi] = {
+                    items: [],
+                    totalProduksi: 0,
+                  };
+                }
+
+                provinsiGroups[item.provinsi].items.push(item);
+                provinsiGroups[item.provinsi].totalProduksi += item.produksi;
+              });
+
+              // Use a color scale for provinces
+              const provinsiList = Object.keys(provinsiGroups);
+              const colorScale = generateColorScale(provinsiList.length);
+
+              provinsiList.forEach((provinsi, idx) => {
+                const provinsiData = provinsiGroups[provinsi].items;
+
+                traces.push({
+                  x: provinsiData.map((item) => item.jenisTanaman),
+                  y: provinsiData.map((item) => item.provinsi),
+                  mode: "markers",
+                  marker: {
+                    size: provinsiData.map(
+                      (item) => Math.sqrt(item.produksi) / 2
+                    ),
+                    sizemode: "area",
+                    sizeref:
+                      (2.0 *
+                        Math.max(
+                          ...groupedData.map(
+                            (item) => Math.sqrt(item.produksi) / 2
+                          )
+                        )) /
+                      50 ** 2,
+                    color: colorScale[idx],
+                    opacity: 0.7,
+                    line: {
+                      color: "white",
+                      width: 1,
+                    },
+                  },
+                  text: provinsiData.map(
+                    (item) =>
+                      `Provinsi: ${item.provinsi}<br>Tanaman: ${
+                        item.jenisTanaman
+                      }<br>Tahun: ${
+                        item.tahun
+                      }<br>Produksi: ${item.produksi.toLocaleString()} kw`
+                  ),
+                  hoverinfo: "text",
+                  name: provinsi,
+                });
+              });
+            } else if (shouldGroupByTanaman) {
+              // Group by plant type if multiple plant types
+              const tanamanGroups = {};
+
+              groupedData.forEach((item) => {
+                if (!tanamanGroups[item.jenisTanaman]) {
+                  tanamanGroups[item.jenisTanaman] = {
+                    items: [],
+                    totalProduksi: 0,
+                  };
+                }
+
+                tanamanGroups[item.jenisTanaman].items.push(item);
+                tanamanGroups[item.jenisTanaman].totalProduksi += item.produksi;
+              });
+
+              // Use a color scale for plant types
+              const tanamanList = Object.keys(tanamanGroups);
+              const colorScale = generateColorScale(tanamanList.length);
+
+              tanamanList.forEach((tanaman, idx) => {
+                const tanamanData = tanamanGroups[tanaman].items;
+
+                traces.push({
+                  x: tanamanData.map((item) => item.jenisTanaman),
+                  y: tanamanData.map((item) => item.provinsi),
+                  mode: "markers",
+                  marker: {
+                    size: tanamanData.map(
+                      (item) => Math.sqrt(item.produksi) / 2
+                    ),
+                    sizemode: "area",
+                    sizeref:
+                      (2.0 *
+                        Math.max(
+                          ...groupedData.map(
+                            (item) => Math.sqrt(item.produksi) / 2
+                          )
+                        )) /
+                      50 ** 2,
+                    color: colorScale[idx],
+                    opacity: 0.7,
+                    line: {
+                      color: "white",
+                      width: 1,
+                    },
+                  },
+                  text: tanamanData.map(
+                    (item) =>
+                      `Provinsi: ${item.provinsi}<br>Tanaman: ${
+                        item.jenisTanaman
+                      }<br>Tahun: ${
+                        item.tahun
+                      }<br>Produksi: ${item.produksi.toLocaleString()} kw`
+                  ),
+                  hoverinfo: "text",
+                  name: tanaman,
+                });
+              });
+            } else {
+              // Single trace for simple case
+              traces.push({
+                x: groupedData.map((item) => item.jenisTanaman),
+                y: groupedData.map((item) => item.provinsi),
+                mode: "markers",
+                marker: {
+                  size: groupedData.map((item) => Math.sqrt(item.produksi) / 2),
+                  sizemode: "area",
+                  sizeref:
+                    (2.0 *
+                      Math.max(
+                        ...groupedData.map(
+                          (item) => Math.sqrt(item.produksi) / 2
+                        )
+                      )) /
+                    50 ** 2,
+                  color: groupedData.map((item) => item.produksi),
+                  colorscale: "Viridis",
+                  showscale: true,
+                  colorbar: {
+                    title: "Produksi (kw)",
+                  },
+                  opacity: 0.7,
+                  line: {
+                    color: "white",
+                    width: 1,
+                  },
+                },
+                text: groupedData.map(
+                  (item) =>
+                    `Provinsi: ${item.provinsi}<br>Tanaman: ${
+                      item.jenisTanaman
+                    }<br>Tahun: ${
+                      item.tahun
+                    }<br>Produksi: ${item.produksi.toLocaleString()} kw`
+                ),
+                hoverinfo: "text",
+                name: `Produksi ${selectedTahun}`,
+              });
+            }
+          }
+        }
+
+        // Atur layout
+        const layout = {
+          title: `Produksi ${
+            selectedJenisTanaman === "all"
+              ? "Semua Jenis Tanaman"
+              : selectedJenisTanaman
+          } di ${
+            selectedProvinsi === "all" ? "Semua Provinsi" : selectedProvinsi
+          } (${selectedTahun === "all" ? "2022-2024" : selectedTahun})`,
+          xaxis: {
+            title: "Jenis Tanaman",
+            type: "category",
+          },
+          yaxis: {
+            title: "Provinsi",
+            type: "category",
+          },
+          showlegend: true,
+          legend: {
+            orientation: "h",
+            y: -0.2,
+          },
+          hovermode: "closest",
+          margin: {
+            l: 150,
+            r: 50,
+            b: 100,
+            t: 80,
+            pad: 4,
+          },
+        };
+
+        // Create the bubble chart
+        Plotly.newPlot("bubbleChart", traces, layout);
+      }
+
+      /**
+       * Generate a nice color scale with the given number of colors
+       * @param {number} numColors - Number of colors needed
+       * @returns {string[]} Array of color hex codes
+       */
+      function generateColorScale(numColors) {
+        const baseColors = [
+          "#1f77b4",
+          "#ff7f0e",
+          "#2ca02c",
+          "#d62728",
+          "#9467bd",
+          "#8c564b",
+          "#e377c2",
+          "#7f7f7f",
+          "#bcbd22",
+          "#17becf",
+          "#aec7e8",
+          "#ffbb78",
+          "#98df8a",
+          "#ff9896",
+          "#c5b0d5",
+          "#c49c94",
+          "#f7b6d2",
+          "#c7c7c7",
+          "#dbdb8d",
+          "#9edae5",
+        ];
+
+        // If we have enough base colors, use them
+        if (numColors <= baseColors.length) {
+          return baseColors.slice(0, numColors);
+        }
+
+        // Otherwise, generate colors using HSL
+        const colors = [];
+        for (let i = 0; i < numColors; i++) {
+          const hue = Math.floor((i * 360) / numColors);
+          colors.push(`hsl(${hue}, 70%, 50%)`);
+        }
+
+        return colors;
+      }
+
+      // Inisialisasi dashboard saat pertama kali dimuat
+      document.addEventListener("DOMContentLoaded", () => {
+        loadFilters().then(() => updateChart());
+      });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.min.js"></script>
+  </body>
+</html>

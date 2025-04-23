@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Peta Produksi Tanaman Indonesia</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/plotly.js@2.26.0/dist/plotly.min.js"></script>
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+      <div class="container-fluid container">
+        <a class="navbar-brand" href="#">Produksi Tanaman</a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarNav"
+          aria-controls="navbarNav"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item">
+              <a class="nav-link" href="index.html">Bar Chart</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="line.html">Line Chart</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" aria-current="page" href="bubble.html"
+                >Bubble Chart</a
+              >
+            </li>
+            <li class="nav-item">
+              <a class="nav-link active" aria-current="page" href="maps.html"
+                >Map Chart</a
+              >
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container mt-5">
+      <div class="alert alert-info">
+        <strong>Tips:</strong> Peta ini menunjukkan produksi tanaman di berbagai
+        provinsi di Indonesia. Anda dapat memfilter berdasarkan jenis tanaman
+        dan tahun.
+      </div>
+
+      <div class="row mb-4">
+        <div class="col-md-6">
+          <label for="jenis_tanaman" class="form-label"
+            >Pilih Jenis Tanaman:</label
+          >
+          <select id="jenis_tanaman" class="form-select" onchange="updateMap()">
+            <option value="all">Semua Jenis Tanaman</option>
+          </select>
+        </div>
+
+        <div class="col-md-6">
+          <label for="tahun" class="form-label">Pilih Tahun:</label>
+          <select id="tahun" class="form-select" onchange="updateMap()">
+            <option value="2022">2022</option>
+            <option value="2023">2023</option>
+            <option value="2024" selected>2024</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="mapChart" class="mt-4 mb-4" style="height: 600px"></div>
+    </div>
+
+    <script>
+      // Indonesia GeoJSON data URL - using a simplified version
+      const geoJsonUrl =
+        "https://raw.githubusercontent.com/superpikar/indonesia-geojson/master/indonesia.geojson";
+      let geoJsonData = null;
+
+      // Mapping for province names that might differ between datasets
+      const provinceMapping = {
+        "DKI Jakarta": "Jakarta Raya",
+        "Kepulauan Bangka Belitung": "Bangka-Belitung",
+        "DI Yogyakarta": "Yogyakarta",
+      };
+
+      // Normalize province names
+      function normalizeProvinceName(name) {
+        return provinceMapping[name] || name;
+      }
+
+      /**
+       * Loads and parses CSV data into JSON format.
+       * @returns {Promise<Object[]>} Parsed data array
+       */
+      async function loadData() {
+        const response = await fetch("plotly_data_long.csv");
+        const data = await response.text();
+        const rows = data.split("\n").map((row) => row.split(","));
+        const headers = rows[0];
+
+        const dataArr = rows.slice(1).map((row) => {
+          const obj = {};
+          headers.forEach((header, idx) => {
+            obj[header] = row[idx];
+          });
+          return obj;
+        });
+
+        return dataArr;
+      }
+
+      /**
+       * Loads GeoJSON data for Indonesia
+       */
+      async function loadGeoJson() {
+        try {
+          const response = await fetch(geoJsonUrl);
+          geoJsonData = await response.json();
+
+          // Process GeoJSON to ensure it works well with Plotly
+          geoJsonData.features.forEach((feature) => {
+            if (feature.properties && feature.properties.state) {
+              // Ensure proper province name format
+              feature.properties.provinceName = feature.properties.state;
+            }
+          });
+
+          return geoJsonData;
+        } catch (error) {
+          console.error("Error loading GeoJSON:", error);
+          return null;
+        }
+      }
+
+      /**
+       * Initializes filter dropdown for plant type.
+       */
+      async function loadFilters() {
+        const data = await loadData();
+
+        const jenisTanamanSet = new Set(
+          data.map((item) => item["Jenis Tanaman"])
+        );
+        const jenisTanamanSelect = document.getElementById("jenis_tanaman");
+        Array.from(jenisTanamanSet)
+          .sort()
+          .forEach((jenis) => {
+            const option = document.createElement("option");
+            option.value = jenis;
+            option.textContent = jenis;
+            jenisTanamanSelect.appendChild(option);
+          });
+      }
+
+      /**
+       * Updates and renders the map chart based on selected filters.
+       */
+      async function updateMap() {
+        if (!geoJsonData) {
+          // Load GeoJSON data if not already loaded
+          geoJsonData = await loadGeoJson();
+          if (!geoJsonData) {
+            document.getElementById("mapChart").innerHTML =
+              '<div class="alert alert-danger">Gagal memuat data peta. Silakan refresh halaman.</div>';
+            return;
+          }
+        }
+
+        const data = await loadData();
+        const selectedJenisTanaman =
+          document.getElementById("jenis_tanaman").value;
+        const selectedTahun = document.getElementById("tahun").value;
+
+        // Filter data berdasarkan pilihan
+        const filteredData = data.filter((item) => {
+          const isValidProvinsi = item["Provinsi"].trim() !== "";
+          const matchTanaman =
+            selectedJenisTanaman === "all" ||
+            item["Jenis Tanaman"] === selectedJenisTanaman;
+          const matchTahun = item["Tahun"] === selectedTahun;
+          return isValidProvinsi && matchTanaman && matchTahun;
+        });
+
+        // Group data per provinsi
+        const groupedData = {};
+
+        filteredData.forEach((item) => {
+          const provinsi = item["Provinsi"];
+
+          if (!groupedData[provinsi]) {
+            groupedData[provinsi] = 0;
+          }
+
+          groupedData[provinsi] += parseFloat(item["Produksi"]);
+        });
+
+        // Create choropleth map data
+        const locations = [];
+        const z = [];
+        const text = [];
+
+        // Prepare data for the choropleth map
+        Object.keys(groupedData).forEach((province) => {
+          const normalizedName = normalizeProvinceName(province);
+
+          // Cek apakah provinsi ini ada di GeoJSON
+          const found = geoJsonData.features.some(
+            (f) => f.properties.state === normalizedName
+          );
+
+          if (!found) {
+            console.warn(
+              `Provinsi tidak ditemukan di GeoJSON: ${province} → ${normalizedName}`
+            );
+          }
+
+          locations.push(normalizedName);
+          z.push(groupedData[province]);
+          text.push(
+            `${province}: ${groupedData[province].toLocaleString()} kw`
+          );
+        });
+
+        // Create the choropleth trace
+        const trace = {
+          type: "choropleth",
+          locationmode: "geojson-id",
+          locations: locations,
+          z: z,
+          text: text,
+          geojson: geoJsonData,
+          featureidkey: "properties.state",
+          colorscale: "Greens",
+          reversescale: true,
+          colorbar: {
+            title: "Produksi (kw)",
+            thickness: 20,
+          },
+          hoverinfo: "text",
+          marker: {
+            line: {
+              color: "rgb(255,255,255)",
+              width: 1,
+            },
+          },
+        };
+
+        // Setup layout
+        const layout = {
+          title: `Produksi ${
+            selectedJenisTanaman === "all"
+              ? "Semua Tanaman"
+              : selectedJenisTanaman
+          } di Indonesia (${selectedTahun})`,
+          geo: {
+            scope: "asia",
+            resolution: 50,
+            lonaxis: {
+              range: [95, 141],
+            },
+            lataxis: {
+              range: [-11, 6],
+            },
+            showland: true,
+            landcolor: "lightgray",
+            showcoastlines: true,
+            coastlinecolor: "gray",
+            coastlinewidth: 0.5,
+            projection: {
+              type: "mercator",
+            },
+            center: {
+              lon: 118,
+              lat: -2.5,
+            },
+          },
+          height: 600,
+          margin: {
+            l: 0,
+            r: 0,
+            b: 0,
+            t: 50,
+            pad: 4,
+          },
+        };
+
+        // Add fallback to scatter map if choropleth fails
+        try {
+          Plotly.newPlot("mapChart", [trace], layout);
+        } catch (error) {
+          console.error(
+            "Error creating choropleth map, falling back to scatter map:",
+            error
+          );
+
+          // Create scatter fallback
+          const scatterTrace = {
+            type: "scattergeo",
+            locationmode: "country names",
+            lon: [
+              95.3, 115.2, 106.1, 106.7, 102.3, 110.4, 106.8, 123.1, 103.6,
+              107.6, 110.0, 112.7, 110.5, 115.2, 113.9, 116.4, 117.0, 104.5,
+              105.3, 129.5, 127.8, 116.3, 121.5, 138.7, 134.1, 101.8, 119.3,
+              119.9, 121.4, 122.4, 124.8, 100.5, 104.0, 98.7,
+            ],
+            lat: [
+              5.5, -8.4, -2.7, -6.4, -3.8, -7.9, -6.2, 0.7, -1.6, -7.0, -7.3,
+              -7.5, 0.0, -3.5, -1.9, -0.5, 2.7, 0.9, -4.5, -3.2, 1.6, -8.7,
+              -8.8, -4.3, -1.3, 0.5, -2.9, -5.1, -1.4, -4.0, 1.5, -0.9, -3.0,
+              2.1,
+            ],
+            text: Object.keys(groupedData).map(
+              (province) =>
+                `${province}: ${groupedData[province].toLocaleString()} kw`
+            ),
+            marker: {
+              size: Object.values(groupedData).map(
+                (val) => Math.log10(val + 1) * 5 + 10
+              ),
+              color: Object.values(groupedData).map((val) =>
+                Math.log10(val + 1)
+              ),
+              colorscale: "Greens",
+              line: {
+                color: "black",
+                width: 1,
+              },
+              colorbar: {
+                title: "Produksi (kw)",
+                thickness: 20,
+              },
+            },
+            name: "Produksi Tanaman",
+          };
+
+          Plotly.newPlot("mapChart", [scatterTrace], layout);
+        }
+      }
+
+      // Initialize the map when the page loads
+      document.addEventListener("DOMContentLoaded", async () => {
+        // Load GeoJSON data first
+        await loadGeoJson();
+
+        // Then continue with filters and map update
+        await loadFilters();
+        updateMap();
+      });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.min.js"></script>
+  </body>
+</html>
